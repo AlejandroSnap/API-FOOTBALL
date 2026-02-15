@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 
 from app.database.connection import db
-from app.schemas.player_schema import Player, PlayerUpdate
+from app.schemas.player_schema import *
 
 def create_player(player: Player):
     player_dict = player.model_dump()
