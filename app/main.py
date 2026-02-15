@@ -1,7 +1,6 @@
 from fastapi import FastAPI
-from pymongo import MongoClient
-from app.routes.user_routes import router as user_router
+from app.routes.player_routes import router as player_router
 
 app = FastAPI()
 
-app.include_router(user_router)
+app.include_router(player_router)
