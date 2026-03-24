@@ -52,7 +52,6 @@ def get_player_by_id(id: str):
     return player
 
 
-    return {"player": updated_player}
 def delete_player(id: str):
     id = int(id)
 
