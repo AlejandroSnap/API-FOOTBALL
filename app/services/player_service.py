@@ -51,6 +51,8 @@ def get_player_by_id(id: str):
     player["_id"] = str(player["_id"])
     return player
 
+def get_all_players():
+    return True
 
 def delete_player(id: str):
     id = int(id)

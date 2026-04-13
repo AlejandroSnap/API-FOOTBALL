@@ -22,4 +22,4 @@ def patch(id: str, update: PlayerUpdate):
 
 @router.delete("/players/{id}")
 def remove_user(id: str):
-    return delete_user(id)
+    return delete_player(id)
