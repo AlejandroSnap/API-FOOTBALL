@@ -43,5 +43,5 @@ variable "db_url" {
 variable "rabbitmq_url" {
   description = "URL de RabbitMQ"
   sensitive   = true
-  default     = "amqp://guest:guest@localhost:5672/"
+  default     = "amqp://user:admin@localhost:5672/"
 }

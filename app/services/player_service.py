@@ -52,7 +52,16 @@ def get_player_by_id(id: str):
     return player
 
 def get_all_players():
-    return True
+    players = []
+
+    for player in db["players"].find():
+        player["_id"] = str(player["_id"])
+        players.append(player)
+
+    if not players:
+        raise HTTPException(status_code=404, detail="No players found.")
+
+    return players
 
 def delete_player(id: str):
     id = int(id)
