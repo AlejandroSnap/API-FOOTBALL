@@ -1,6 +1,6 @@
 # ⚽ API Football
 
-API REST construida con **FastAPI** para gestionar datos de fútbol jugadores de futbol(edad, posicion, dorsal), desplegada en **AWS EC2** usando infraestructura como código con **Terraform (OpenTofu)**, base de datos **MongoDB**, balanceador de carga y configuración centralizada con **AWS Parameter Store**.
+API REST construida con **FastAPI** para consultar y gestionar información de jugadores de fútbol. Las escrituras son procesadas de forma **asíncrona** mediante **RabbitMQ** y un worker dedicado. La infraestructura completa está automatizada con **Terraform (OpenTofu)** sobre **AWS**, con balanceador de carga y configuración centralizada en **Parameter Store**.
 
 ---
 
@@ -9,26 +9,30 @@ API REST construida con **FastAPI** para gestionar datos de fútbol jugadores de
 - [Descripción](#-descripción)
 - [Tecnologías](#-tecnologías)
 - [Arquitectura](#-arquitectura)
+- [Estructura del proyecto](#-estructura-del-proyecto)
 - [Requisitos previos](#-requisitos-previos)
+- [Variables de entorno](#-variables-de-entorno)
 - [Instalación local](#-instalación-local)
 - [Ejecución con Docker](#-ejecución-con-docker)
 - [Pruebas unitarias](#-pruebas-unitarias)
 - [Chequeo de código estático](#-chequeo-de-código-estático)
-- [Despliegue en AWS EC2 con Terraform](#-despliegue-en-aws-ec2-con-terraform)
+- [Despliegue en AWS con Terraform](#-despliegue-en-aws-con-terraform)
 - [Swagger / Documentación de la API](#-swagger--documentación-de-la-api)
-- [Endpoints principales](#-endpoints-principales)
+- [Endpoints](#-endpoints)
+- [Modelo de datos](#-modelo-de-datos)
 
 ---
 
 ## 📖 Descripción
 
-**API Football** es una API REST desarrollada como proyecto del curso de **Computación en la Nube**. Permite consultar y gestionar información acerca de jugadores de futbol tales como
-nombre, edad, posicion, dorsal.
+**API Football** es una API REST desarrollada como proyecto del curso de **Computación en la Nube**. Permite consultar y gestionar información de jugadores de fútbol: nombre, equipo, posición, goles en carrera y número de camiseta.
+
+Las operaciones de escritura (crear y eliminar jugadores) se procesan de forma **asíncrona**: la API publica un mensaje en una cola de **RabbitMQ** y un **worker** independiente lo consume y ejecuta la operación en **MongoDB**.
 
 La infraestructura está completamente automatizada con **Terraform (OpenTofu)**:
 - Cada servicio corre en su propia instancia **EC2**
-- Las IPs de los servicios se obtienen dinámicamente desde **AWS Parameter Store**
-- Un **Application Load Balancer (ALB)** distribuye el tráfico entre al menos dos instancias de la API
+- Las IPs de MongoDB y RabbitMQ se almacenan y leen desde **AWS Parameter Store**
+- Un **Application Load Balancer** distribuye el tráfico entre dos instancias de la API
 
 ---
 
@@ -39,10 +43,12 @@ La infraestructura está completamente automatizada con **Terraform (OpenTofu)**
 | **FastAPI** | Framework principal de la API |
 | **Python 3.12** | Lenguaje de programación |
 | **MongoDB** | Base de datos NoSQL |
+| **RabbitMQ** | Cola de mensajes para operaciones asíncronas |
+| **Pika** | Cliente Python para RabbitMQ |
 | **Docker / Docker Compose** | Contenedores |
 | **Terraform (OpenTofu)** | Infraestructura como código |
 | **AWS EC2** | Cómputo en la nube |
-| **AWS Parameter Store** | Configuración centralizada de IPs |
+| **AWS Parameter Store (SSM)** | Almacenamiento de IPs de servicios |
 | **AWS ALB** | Balanceador de carga |
 | **pytest** | Pruebas unitarias |
 | **ruff** | Linter / chequeo de código estático |
@@ -54,24 +60,73 @@ La infraestructura está completamente automatizada con **Terraform (OpenTofu)**
 ```
 Internet
     │
-    ▼
+    ▼ (puerto 80)
 [Application Load Balancer]
-    │              │
-    ▼              ▼
-[EC2 - API 1]  [EC2 - API 2]   ← FastAPI + Docker
-    │              │
-    └──────┬───────┘
-           ▼
-    [EC2 - MongoDB]
-           │
-           ▼
-  [AWS Parameter Store]
-  (almacena IPs de servicios)
+    │                   │
+    ▼                   ▼
+[EC2: API 1]       [EC2: API 2]        ← FastAPI (puerto 8000)
+    │                   │
+    └────────┬──────────┘
+             │ publica mensajes
+             ▼
+    [EC2: RabbitMQ]                    ← Message Broker (puerto 5672)
+             │
+             ▼ consume mensajes
+    [EC2: Worker]                      ← Procesa create / delete
+             │
+             ▼
+    [EC2: MongoDB]                     ← Base de datos (puerto 27017)
+
+             ▲
+             │ lee IPs al iniciar
+    [AWS Parameter Store]
+      /football/mongo_ip
+      /football/rabbitmq_ip
 ```
 
-- El ALB recibe el tráfico y lo distribuye entre dos instancias de la API.
-- Cada instancia de la API obtiene la IP de MongoDB desde **AWS Parameter Store** al arrancar.
-- La base de datos corre en su propia instancia EC2 separada.
+**Flujo de una operación de escritura:**
+1. El cliente hace `POST /players` o `DELETE /players/{id}` a la API (vía ALB)
+2. La API publica un mensaje en la cola `player_tasks` de RabbitMQ
+3. El worker consume el mensaje y ejecuta la operación en MongoDB
+
+**Flujo de una operación de lectura:**
+1. El cliente hace `GET /players` o `GET /players/{id}`
+2. La API consulta directamente MongoDB y devuelve la respuesta
+
+---
+
+## 📁 Estructura del proyecto
+
+```
+API-FOOTBALL/
+├── app/
+│   ├── database/           # Conexión a MongoDB
+│   ├── routes/
+│   │   └── player_routes.py
+│   ├── schemas/
+│   │   └── player_schema.py
+│   ├── services/
+│   │   └── player_service.py
+│   ├── main.py
+│   ├── rabbitmq.py         # Publicador de mensajes
+│   └── worker.py           # Consumidor de la cola
+├── terraform/
+│   ├── main.tf             # EC2, ALB, Parameter Store, Security Groups
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── scripts/
+│       ├── api.sh
+│       ├── rabbitmq.sh
+│       ├── worker.sh
+│       └── mongo.sh
+├── .env
+├── Dockerfile
+├── Dockerfile.local
+├── docker-compose.yml
+├── requirements.txt
+├── pyproject.toml
+└── README.md
+```
 
 ---
 
@@ -79,9 +134,26 @@ Internet
 
 - Python 3.12+
 - Docker y Docker Compose
-- OpenTofu (Terraform) instalado
+- OpenTofu instalado (`tofu`)
 - Cuenta de AWS con credenciales configuradas (`aws configure`)
-- `uv` (gestor de paquetes, opcional)
+
+---
+
+## 🔧 Variables de entorno
+
+Crear un archivo `.env` en la raíz del proyecto con las siguientes variables:
+
+```env
+MONGO_URI=mongodb://user:admin@localhost:27017/?authSource=admin
+
+RABBITMQ_HOST=rabbitmq
+RABBITMQ_USER=user
+RABBITMQ_PASSWORD=admin
+RABBITMQ_PORT=5672
+RABBITMQ_QUEUE=player_tasks
+```
+
+> En el despliegue en EC2, los valores de `MONGO_URI` y `RABBITMQ_HOST` se construyen dinámicamente leyendo las IPs desde **AWS Parameter Store** (`/football/mongo_ip` y `/football/rabbitmq_ip`).
 
 ---
 
@@ -92,32 +164,25 @@ Internet
 git clone https://github.com/AlejandroSnap/API-FOOTBALL.git
 cd API-FOOTBALL
 
-# Crear entorno virtual e instalar dependencias
+# Crear entorno virtual
 python -m venv .venv
-source .venv/bin/activate        # Linux/Mac
-# .venv\Scripts\activate         # Windows
+source .venv/bin/activate       # Linux/Mac
+# .venv\Scripts\activate        # Windows
 
+# Instalar dependencias
 pip install -r requirements.txt
 ```
 
-Configurar variables de entorno copiando el archivo `.env`:
-
-```bash
-cp .env .env.local
-# Editar .env.local con tus valores locales
-```
-
-Variables principales del `.env`:
-
-```env
-MONGO_URI=mongodb://localhost:27017
-DB_NAME=football
-```
-
-Iniciar la API localmente:
+Iniciar la API:
 
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Iniciar el worker (en otra terminal):
+
+```bash
+python -m app.worker
 ```
 
 Acceder a: `http://localhost:8000/docs`
@@ -126,15 +191,15 @@ Acceder a: `http://localhost:8000/docs`
 
 ## 🐳 Ejecución con Docker
 
-### Desarrollo local
-
 ```bash
 docker compose up --build
 ```
 
-Esto levanta:
-- La API en `http://localhost:8000`
-- MongoDB en el puerto `27017`
+Esto levanta todos los servicios:
+- API en `http://localhost:8000`
+- RabbitMQ en puerto `5672` / panel web en `http://localhost:15672`
+- MongoDB en puerto `27017`
+- Worker procesando la cola en background
 
 Para detener:
 
@@ -146,19 +211,16 @@ docker compose down
 
 ## 🧪 Pruebas unitarias
 
-Las pruebas están escritas con **pytest** y cubren los endpoints y funciones principales de la API.
+Las pruebas están escritas con **pytest**.
 
 ```bash
-# Instalar dependencias de prueba (si no están instaladas)
-pip install -r requirements.txt
-
 # Correr todas las pruebas
 pytest
 
-# Con verbose
+# Con detalle
 pytest -v
 
-# Ver cobertura
+# Con reporte de cobertura
 pytest --cov=app
 ```
 
@@ -166,39 +228,38 @@ pytest --cov=app
 
 ## 🔍 Chequeo de código estático
 
-Se usa **ruff** como linter para revisar errores, malas prácticas y estilo de código.
+Se usa **ruff** como linter.
 
 ```bash
 # Verificar el código
 ruff check .
 
-# Corregir automáticamente
+# Corregir automáticamente lo que sea posible
 ruff check . --fix
 ```
 
-La configuración de ruff se encuentra en `pyproject.toml`.
+La configuración se encuentra en `pyproject.toml`.
 
 ---
 
-## ☁️ Despliegue en AWS EC2 con Terraform
+## ☁️ Despliegue en AWS con Terraform
 
-La infraestructura completa se crea con **OpenTofu (Terraform)**.
+La infraestructura crea **5 instancias EC2** y un **Application Load Balancer**.
 
 ### 1. Configurar credenciales AWS
 
 ```bash
 aws configure
-# Ingresar: Access Key, Secret Key, Region (us-east-1), formato (json)
 ```
 
-### 2. Inicializar Terraform
+### 2. Inicializar OpenTofu
 
 ```bash
 cd terraform
 tofu init
 ```
 
-### 3. Revisar el plan de infraestructura
+### 3. Revisar el plan
 
 ```bash
 tofu plan
@@ -210,45 +271,37 @@ tofu plan
 tofu apply
 ```
 
-Esto crea automáticamente:
-- 2 instancias EC2 para la API
-- 1 instancia EC2 para MongoDB
-- 1 Application Load Balancer
-- Security Groups con los puertos necesarios abiertos (8000, 27017)
-- Parámetros en AWS Parameter Store con las IPs de cada servicio
+Recursos que se crean automáticamente:
+
+| Recurso | Nombre | Descripción |
+|---|---|---|
+| EC2 | `football-api-1` | Primera instancia de la API |
+| EC2 | `football-api-2` | Segunda instancia de la API |
+| EC2 | `rabbitmq-server` | Broker de mensajes |
+| EC2 | `worker-server` | Consumidor de la cola |
+| EC2 | `mongodb-server` | Base de datos |
+| EIP | `rabbitmq-static-ip` | IP estática para RabbitMQ |
+| EIP | `mongodb-static-ip` | IP estática para MongoDB |
+| SSM | `/football/rabbitmq_ip` | IP de RabbitMQ en Parameter Store |
+| SSM | `/football/mongo_ip` | IP de MongoDB en Parameter Store |
+| ALB | `football-lb-api` | Balanceador de carga (puerto 80) |
+| Target Group | `football-api-tg` | Apunta a las 2 APIs en puerto 8000 |
+
+El ALB hace health check en `/health` de cada instancia antes de enviarle tráfico.
 
 ### 5. Acceder a la API
 
-Después del despliegue, Terraform mostrará la **DNS del Load Balancer**. Acceder a:
+Después del `tofu apply`, usar la DNS del Load Balancer:
 
 ```
 http://<DNS_DEL_ALB>/docs
 ```
 
-### 6. Destruir la infraestructura (cuando no se necesite)
+### 6. Destruir la infraestructura
 
 ```bash
 tofu destroy
 ```
-
----
-
-### Parameter Store
-
-El código de la API lee la IP de MongoDB directamente desde AWS Parameter Store:
-
-```python
-# Ejemplo de cómo se obtiene la IP
-import boto3
-
-ssm = boto3.client('ssm', region_name='us-east-1')
-mongo_ip = ssm.get_parameter(Name='/football/mongo_ip')['Parameter']['Value']
-```
-
-Los parámetros que se crean son:
-- `/football/mongo_ip` — IP privada de la instancia MongoDB
-- `/football/api_ip_1` — IP de la primera instancia API
-- `/football/api_ip_2` — IP de la segunda instancia API
 
 ---
 
@@ -259,31 +312,66 @@ FastAPI genera automáticamente la documentación interactiva.
 | Entorno | URL |
 |---|---|
 | Local | `http://localhost:8000/docs` |
-| EC2 (via ALB) | `http://<DNS_DEL_ALB>/docs` |
-| Alternativa (ReDoc) | `http://localhost:8000/redoc` |
+| EC2 (vía ALB) | `http://<DNS_DEL_ALB>/docs` |
+| ReDoc (alternativa) | `http://localhost:8000/redoc` |
 
 ---
 
-## 🔗 Endpoints principales
+## 🔗 Endpoints
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| `GET` | `/` | Health check |
-| `GET` | `/equipos` | Listar todos los equipos |
-| `POST` | `/equipos` | Crear un equipo |
-| `GET` | `/equipos/{id}` | Obtener un equipo por ID |
-| `PUT` | `/equipos/{id}` | Actualizar un equipo |
-| `DELETE` | `/equipos/{id}` | Eliminar un equipo |
-| `GET` | `/jugadores` | Listar jugadores |
-| `POST` | `/jugadores` | Crear un jugador |
-| `GET` | `/partidos` | Listar partidos |
-| `POST` | `/partidos` | Registrar un partido |
-
-La documentación completa e interactiva está disponible en `/docs` (Swagger UI).
+| `GET` | `/health` | Health check del servidor |
+| `GET` | `/players` | Listar todos los jugadores |
+| `GET` | `/players/{id}` | Obtener un jugador por ID |
+| `POST` | `/players` | Crear un jugador (asíncrono vía RabbitMQ) |
+| `PATCH` | `/players/{id}` | Actualizar parcialmente un jugador |
+| `DELETE` | `/players/{id}` | Eliminar un jugador (asíncrono vía RabbitMQ) |
 
 ---
 
-## 👤 Autor
+## 📐 Modelo de datos
 
-**AlejandroSnap**  
-Proyecto final — Curso de Computación en la Nube
+### Player
+
+```json
+{
+  "id": 10,
+  "name": "Lionel Messi",
+  "team_id": 3,
+  "career_goals": 819,
+  "jersey_number": 10,
+  "position": "FWD"
+}
+```
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | `int` | Identificador del jugador |
+| `name` | `str` | Nombre completo |
+| `team_id` | `int` | ID del equipo al que pertenece |
+| `career_goals` | `int` | Goles acumulados en su carrera |
+| `jersey_number` | `int` | Número de camiseta |
+| `position` | `enum` | Posición: `GK`, `DEF`, `MID`, `FWD` |
+
+### PlayerUpdate (PATCH)
+
+Todos los campos son opcionales:
+
+```json
+{
+  "name": "Lionel Messi",
+  "team_id": 5,
+  "career_goals": 820,
+  "jersey_number": 10,
+  "position": "FWD"
+}
+```
+
+---
+
+## 👤 Autores
+
+* Alejandro Casas
+* Miguel Rodriguez
+— Curso de Computación en la Nube
