@@ -4,3 +4,7 @@ from app.routes.player_routes import router as player_router
 app = FastAPI()
 
 app.include_router(player_router)
+
+@app.get("/health")
+def health():
+    return {"status", "ok"}

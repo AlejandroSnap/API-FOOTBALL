@@ -205,7 +205,7 @@ resource "aws_lb_target_group" "api_tg" {
   vpc_id   = var.vpc_id
 
   health_check {
-    path                = "/players"
+    path                = "/health"
     healthy_threshold   = 2
     unhealthy_threshold = 2
     interval            = 30

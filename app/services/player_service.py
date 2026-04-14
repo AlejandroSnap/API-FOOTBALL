@@ -58,8 +58,8 @@ def get_all_players():
         player["_id"] = str(player["_id"])
         players.append(player)
 
-    if not players:
-        raise HTTPException(status_code=404, detail="No players found.")
+    # if not players:
+    #     raise HTTPException(status_code=404, detail="No players found.")
 
     return players
 
