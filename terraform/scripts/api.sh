@@ -1,6 +1,6 @@
 #!/bin/bash
 
-exec > /tmp/api.log 2>&1  # Todo el log va aquí desde el inicio
+exec > /tmp/api.log 2>&1  # Log desde el inicio, sin set -e
 
 dnf update -y
 dnf install -y python3 python3-pip git
@@ -24,10 +24,10 @@ cd /home/ec2-user
 git clone https://github.com/AlejandroSnap/API-FOOTBALL.git app
 cd app
 
-# ── Sin --upgrade pip, con --break-system-packages ─────────
-pip3 install uvicorn fastapi pymongo pika python-dotenv --break-system-packages
+# ── Sin --upgrade pip, sin --break-system-packages ─────────
+pip3 install uvicorn fastapi pymongo pika python-dotenv --user
 
-cat > .env <<EOF
+cat > /home/ec2-user/app/.env <<EOF
 MONGO_URI=mongodb://user:admin@${MONGO_IP}:27017/main?authSource=admin
 RABBITMQ_HOST=${RABBITMQ_IP}
 RABBITMQ_PORT=5672
@@ -37,7 +37,8 @@ RABBITMQ_QUEUE=player_tasks
 EOF
 
 echo ".env generado:"
-cat .env
+cat /home/ec2-user/app/.env
 
-nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 >> /tmp/api.log 2>&1 &
+# ── user_data corre como root, uvicorn queda en /root/.local ─
+nohup /root/.local/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 >> /tmp/api.log 2>&1 &
 echo "uvicorn arrancado"

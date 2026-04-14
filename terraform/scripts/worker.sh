@@ -24,10 +24,9 @@ cd /home/ec2-user
 git clone https://github.com/AlejandroSnap/API-FOOTBALL.git app
 cd app
 
-# ── Sin --upgrade pip, con --break-system-packages ─────────
-pip3 install uvicorn fastapi pymongo pika python-dotenv --break-system-packages
+pip3 install uvicorn fastapi pymongo pika python-dotenv --user
 
-cat > .env <<EOF
+cat > /home/ec2-user/app/.env <<EOF
 MONGO_URI=mongodb://user:admin@${MONGO_IP}:27017/main?authSource=admin
 RABBITMQ_HOST=${RABBITMQ_IP}
 RABBITMQ_PORT=5672
@@ -37,7 +36,7 @@ RABBITMQ_QUEUE=player_tasks
 EOF
 
 echo ".env generado:"
-cat .env
+cat /home/ec2-user/app/.env
 
-nohup python3 app/worker.py >> /tmp/worker.log 2>&1 &
+nohup /root/.local/bin/python3 /home/ec2-user/app/app/worker.py >> /tmp/worker.log 2>&1 &
 echo "worker arrancado"
