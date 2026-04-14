@@ -134,7 +134,6 @@ API-FOOTBALL/
 
 - Python 3.12+
 - Docker y Docker Compose
-- OpenTofu instalado (`tofu`)
 - Cuenta de AWS con credenciales configuradas (`aws configure`)
 
 ---
@@ -256,19 +255,19 @@ aws configure
 
 ```bash
 cd terraform
-tofu init
+terraform init
 ```
 
 ### 3. Revisar el plan
 
 ```bash
-tofu plan
+terraform plan
 ```
 
 ### 4. Aplicar la infraestructura
 
 ```bash
-tofu apply
+terraform apply
 ```
 
 Recursos que se crean automáticamente:
