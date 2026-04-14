@@ -37,7 +37,7 @@ services:
     ports:
       - "5001:8000"
     volumes:
-      - .:/code
+      - .:/app
     environment:
         MONGO_URI: "mongodb://user:admin@mongodb:27017/main?authSource=admin"
         RABBITMQ_HOST: rabbitmq
@@ -52,10 +52,12 @@ services:
         condition: service_healthy
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  
+
   worker:
     build: .
     volumes:
-      - .:/code
+      - .:/app
     environment:
       MONGO_URI: "mongodb://user:admin@mongodb:27017/?authSource=admin"
       RABBITMQ_HOST: rabbitmq

@@ -8,3 +8,14 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+
+# Secrets
+*.pem
+.env
+*.tfvars
